@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>เช็คลิสต์งานพนักงาน</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="app"><div class="loading">กำลังโหลด…</div></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <div id="lightbox" hidden><img alt="รูปงาน"></div>
+  <script>
+    // เปิดไฟล์ตรง ๆ (file://) จะใช้งานไม่ได้ ต้องเปิดผ่านเซิร์ฟเวอร์
+    if (location.protocol === 'file:') {
+      document.getElementById('app').innerHTML =
+        '<div class="loading" style="padding:30vh 16px;font-family:sans-serif;text-align:center">' +
+        '<h2>⚠️ เปิดไฟล์นี้ตรง ๆ ไม่ได้</h2>' +
+        '<p>ให้ดับเบิลคลิก <b>start.bat</b> ในโฟลเดอร์โปรเจกต์<br>แล้วเปิด <b>http://localhost:8000</b></p></div>';
+    }
+  </script>
+  <script src="/app.js"></script>
+</body>
+</html>
