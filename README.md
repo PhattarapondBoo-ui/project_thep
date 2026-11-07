@@ -36,3 +36,23 @@
 | `uploads/` | รูปที่พนักงานอัปโหลด |
 
 ลบ `data.db` และ `uploads/` = เริ่มระบบใหม่ทั้งหมด
+(`data.db` และ `uploads/` ไม่ถูกอัปขึ้น GitHub — ดู `.gitignore`)
+
+## ขึ้นออนไลน์ด้วย Railway
+> Vercel ใช้กับเว็บนี้ไม่ได้ เพราะไม่รัน `server.py` และไม่มีที่เก็บไฟล์ถาวร
+
+1. สมัคร https://railway.com ด้วยบัญชี GitHub
+2. **New Project → Deploy from GitHub repo** → เลือก repo นี้
+3. ในบริการที่สร้าง: **Settings → Volumes → Add Volume** ตั้ง Mount path เป็น `/data`
+   (ที่เก็บฐานข้อมูลและรูป — ถ้าไม่ใส่ ข้อมูลจะหายทุกครั้งที่ deploy)
+4. **Variables** เพิ่ม `ADMIN_PASSWORD` = รหัสผ่านนายจ้างที่ต้องการ (ตั้งให้เดายาก)
+5. **Settings → Networking → Generate Domain** จะได้ลิงก์ `https://….up.railway.app`
+6. เข้าด้วย `admin` + รหัสจากข้อ 4 แล้วเพิ่มบัญชีพนักงานในแท็บ "จัดการพนักงาน"
+
+ทุกครั้งที่ push ขึ้น GitHub, Railway จะอัปเดตเว็บให้อัตโนมัติ (ข้อมูลใน Volume ไม่หาย)
+
+| ตัวแปร | ใช้ทำอะไร |
+|---|---|
+| `ADMIN_PASSWORD` | รหัสบัญชี admin ตอนสร้างฐานข้อมูลครั้งแรก (ตั้งแล้วจะไม่มีบัญชี/งานตัวอย่าง) |
+| `DATA_DIR` | โฟลเดอร์เก็บข้อมูล (Railway ใช้ Volume ให้อัตโนมัติ) |
+| `PORT` | พอร์ต (Railway ตั้งให้เอง) |

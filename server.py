@@ -24,8 +24,10 @@ from urllib.parse import unquote, urlparse
 
 # ---------------- ตั้งค่า ----------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "data.db")          # ฐานข้อมูล
-UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")       # รูปที่พนักงานอัปโหลด
+# ที่เก็บข้อมูล: บนคลาวด์ให้ชี้ไปที่ดิสก์ถาวร (Railway ตั้ง RAILWAY_VOLUME_MOUNT_PATH ให้อัตโนมัติ)
+DATA_DIR = os.environ.get("DATA_DIR") or os.environ.get("RAILWAY_VOLUME_MOUNT_PATH") or BASE_DIR
+DB_PATH = os.path.join(DATA_DIR, "data.db")          # ฐานข้อมูล
+UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")       # รูปที่พนักงานอัปโหลด
 PUBLIC_DIR = os.path.join(BASE_DIR, "public")        # หน้าเว็บ
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8000"))
@@ -33,10 +35,15 @@ SESSION_SECONDS = 7 * 24 * 3600                      # อยู่ในระ�
 MAX_BODY = 20 * 1024 * 1024                          # ขนาดข้อมูลสูงสุดต่อคำขอ
 
 # บัญชีเริ่มต้น (สร้างครั้งแรกที่ยังไม่มีผู้ใช้) — เปลี่ยนรหัสหลังเข้าใช้ครั้งแรก
-DEFAULT_USERS = [
-    ("admin", "admin123", "นายจ้าง", "employer"),
-    ("staff1", "1234", "พนักงาน 1", "employee"),
-]
+# บนคลาวด์ให้ตั้ง ADMIN_PASSWORD: จะสร้างแค่บัญชี admin ด้วยรหัสนั้น ไม่มีบัญชี/งานตัวอย่าง
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "").strip()
+if ADMIN_PASSWORD:
+    DEFAULT_USERS = [("admin", ADMIN_PASSWORD, "นายจ้าง", "employer")]
+else:
+    DEFAULT_USERS = [
+        ("admin", "admin123", "นายจ้าง", "employer"),
+        ("staff1", "1234", "พนักงาน 1", "employee"),
+    ]
 
 ROLE_TH = {"employer": "นายจ้าง", "employee": "พนักงาน"}
 
@@ -151,8 +158,9 @@ def init_db():
                     "INSERT INTO users (username, password, name, role, created_at) VALUES (?,?,?,?,?)",
                     (username, hash_password(pw), name, role, now()),
                 )
-            staff = con.execute("SELECT id FROM users WHERE username='staff1'").fetchone()[0]
-            samples = [
+            staff_row = con.execute("SELECT id FROM users WHERE username='staff1'").fetchone()
+            staff = staff_row[0] if staff_row else None
+            samples = [] if ADMIN_PASSWORD else [
                 ("ทำความสะอาดห้องน้ำ", "โซน A ชั้น 1", "ขัดพื้น เช็ดกระจก เติมสบู่และกระดาษ", staff),
                 ("ถูพื้นล็อบบี้", "โซน B ล็อบบี้", "ถูพื้นให้แห้ง วางป้ายพื้นเปียก", staff),
                 ("เก็บขยะรอบอาคาร", "โซน C ลานจอดรถ", "", None),
@@ -360,6 +368,8 @@ class Handler(BaseHTTPRequestHandler):
             con.execute("INSERT INTO sessions VALUES (?,?,?)", (token, r["id"], now() + SESSION_SECONDS))
         user = {"id": r["id"], "username": r["username"], "name": r["name"], "role": r["role"]}
         cookie = f"sid={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={SESSION_SECONDS}"
+        if self.headers.get("X-Forwarded-Proto", "").lower() == "https":
+            cookie += "; Secure"  # บนคลาวด์ที่เป็น https
         self.send_json(200, user, [("Set-Cookie", cookie)])
 
     def api_logout(self):

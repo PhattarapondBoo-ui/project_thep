@@ -1,0 +1,10 @@
+# ข้อมูลจริง — ห้ามอัปขึ้น GitHub
+data.db
+data.db-journal
+data.db-wal
+data.db-shm
+uploads/
+
+__pycache__/
+*.pyc
+.env
