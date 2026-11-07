@@ -30,14 +30,23 @@ const fmtDate = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('th-TH',
 const todayStr = () => new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD
 
 async function api(method, url, data) {
-  const res = await fetch(url, {
-    method,
-    headers: data ? { 'Content-Type': 'application/json' } : {},
-    body: data ? JSON.stringify(data) : undefined,
-    credentials: 'same-origin',
-  });
+  let res;
+  try {
+    res = await fetch(url, {
+      method,
+      headers: data ? { 'Content-Type': 'application/json' } : {},
+      body: data ? JSON.stringify(data) : undefined,
+      credentials: 'same-origin',
+    });
+  } catch {
+    throw new Error('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — ตรวจว่าเปิด start.bat ค้างไว้อยู่ และอินเทอร์เน็ต/WiFi ใช้ได้');
+  }
   let body = null;
   try { body = await res.json(); } catch { /* ไม่มี body */ }
+  // ได้คำตอบที่ไม่ใช่ JSON จาก /api = ไม่มี server.py ทำงานอยู่ (เช่น เอาไปวางบน Vercel/โฮสต์ไฟล์อย่างเดียว)
+  if (!body && (res.status === 404 || res.status === 405 || res.status >= 500)) {
+    throw new Error('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้: เว็บนี้ต้องรันผ่าน server.py (เช่น start.bat หรือ Railway) — Vercel ใช้ไม่ได้');
+  }
   if (!res.ok) {
     if (res.status === 401 && state.user) { state.user = null; render(); }
     throw new Error((body && body.error) || 'เกิดข้อผิดพลาด');
