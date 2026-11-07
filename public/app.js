@@ -98,6 +98,7 @@ function render() {
 }
 
 function viewLogin() {
+  if (state.setupNeeded) return viewSetup();
   return `
   <main class="login-wrap">
     <div class="login-card">
@@ -115,6 +116,33 @@ function viewLogin() {
         </label>
         <div class="form-error" id="login-error"></div>
         <button class="btn primary block" type="submit">เข้าสู่ระบบ</button>
+      </form>
+    </div>
+  </main>`;
+}
+
+// เปิดเว็บครั้งแรก (ยังไม่มีบัญชีเลย): ให้ตั้งบัญชีนายจ้างเอง
+function viewSetup() {
+  return `
+  <main class="login-wrap">
+    <div class="login-card">
+      <div class="brand">
+        <div class="logo">✓</div>
+        <h1>ตั้งค่าครั้งแรก</h1>
+        <p>สร้างบัญชีนายจ้างสำหรับเข้าใช้ระบบ</p>
+      </div>
+      <form id="setup-form">
+        <label class="field">ชื่อที่แสดง
+          <input name="name" maxlength="100" placeholder="เช่น คุณสมศักดิ์" required>
+        </label>
+        <label class="field">ชื่อผู้ใช้ (ภาษาอังกฤษ/ตัวเลข)
+          <input name="username" autocomplete="username" autocapitalize="none" maxlength="50" required>
+        </label>
+        <label class="field">รหัสผ่าน (อย่างน้อย 6 ตัว)
+          <input name="password" type="password" autocomplete="new-password" minlength="6" required>
+        </label>
+        <div class="form-error" id="login-error"></div>
+        <button class="btn primary block" type="submit">สร้างบัญชีและเข้าสู่ระบบ</button>
       </form>
     </div>
   </main>`;
@@ -560,6 +588,17 @@ document.addEventListener('submit', async (e) => {
   const btn = form.querySelector('[type="submit"]');
   btn.disabled = true;
   try {
+    if (form.id === 'setup-form') {
+      $('#login-error').textContent = '';
+      await api('POST', '/api/setup', data);
+      state.setupNeeded = false;
+      state.user = await api('POST', '/api/login', { username: data.username, password: data.password });
+      state.filter = null;
+      state.employerTab = 'users';  // ไปหน้าเพิ่มพนักงานต่อเลย
+      await refresh();
+      toast('สร้างบัญชีแล้ว เพิ่มบัญชีพนักงานได้เลย');
+      return;
+    }
     if (form.id === 'login-form') {
       $('#login-error').textContent = '';
       // ระบบดูประเภทบัญชี (พนักงาน/นายจ้าง) จากชื่อผู้ใช้เอง
@@ -592,7 +631,7 @@ document.addEventListener('submit', async (e) => {
       return;
     }
   } catch (err) {
-    if (form.id === 'login-form') $('#login-error').textContent = err.message;
+    if (form.id === 'login-form' || form.id === 'setup-form') $('#login-error').textContent = err.message;
     else toast(err.message, true);
   }
   if (document.body.contains(btn)) btn.disabled = false;
@@ -603,6 +642,9 @@ document.addEventListener('submit', async (e) => {
   try {
     state.user = await api('GET', '/api/me');
     await loadData();
-  } catch { state.user = null; }
+  } catch {
+    state.user = null;
+    try { state.setupNeeded = (await api('GET', '/api/setup')).needed; } catch { /* ใช้หน้า login ปกติ */ }
+  }
   render();
 })();

@@ -38,6 +38,23 @@
 ลบ `data.db` และ `uploads/` = เริ่มระบบใหม่ทั้งหมด
 (`data.db` และ `uploads/` ไม่ถูกอัปขึ้น GitHub — ดู `.gitignore`)
 
+## ขึ้นออนไลน์ฟรีด้วย PythonAnywhere
+1. สมัครบัญชีฟรีที่ https://www.pythonanywhere.com (แพลน Beginner)
+2. แท็บ **Files** → อัปโหลด `ptep-pythonanywhere.zip`
+3. แท็บ **Consoles → Bash** พิมพ์ `unzip -o ptep-pythonanywhere.zip`
+4. แท็บ **Web → Add a new web app → Manual configuration → Python 3.x**
+5. ในหน้า Web แก้ไฟล์ **WSGI configuration file** ให้เหลือแค่:
+   ```python
+   import sys
+   sys.path.insert(0, "/home/<ชื่อผู้ใช้>/ptep-project")
+   from wsgi import application
+   ```
+6. กด **Reload** แล้วเปิด `https://<ชื่อผู้ใช้>.pythonanywhere.com`
+7. ครั้งแรกจะขึ้นหน้า **ตั้งค่าครั้งแรก** ให้สร้างบัญชีนายจ้างทันที
+8. แพลนฟรี: เข้าไปกด **"Run until 3 months from today"** ในแท็บ Web ทุก 3 เดือน
+
+อัปเดตโค้ดภายหลัง: อัปโหลด zip ใหม่ → `unzip -o` → กด Reload (ข้อมูลใน `data.db`/`uploads` ไม่หาย)
+
 ## ขึ้นออนไลน์ด้วย Railway
 > Vercel ใช้กับเว็บนี้ไม่ได้ เพราะไม่รัน `server.py` และไม่มีที่เก็บไฟล์ถาวร
 

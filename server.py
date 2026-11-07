@@ -37,8 +37,12 @@ MAX_BODY = 20 * 1024 * 1024                          # ขนาดข้อม�
 # บัญชีเริ่มต้น (สร้างครั้งแรกที่ยังไม่มีผู้ใช้) — เปลี่ยนรหัสหลังเข้าใช้ครั้งแรก
 # บนคลาวด์ให้ตั้ง ADMIN_PASSWORD: จะสร้างแค่บัญชี admin ด้วยรหัสนั้น ไม่มีบัญชี/งานตัวอย่าง
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "").strip()
+# NO_DEMO_DATA=1 (ใช้ตอนออนไลน์ผ่าน wsgi.py): ไม่สร้างบัญชีใด ๆ — เปิดเว็บครั้งแรกจะให้ตั้งบัญชีนายจ้างเอง
+NO_DEMO_DATA = os.environ.get("NO_DEMO_DATA") == "1"
 if ADMIN_PASSWORD:
     DEFAULT_USERS = [("admin", ADMIN_PASSWORD, "นายจ้าง", "employer")]
+elif NO_DEMO_DATA:
+    DEFAULT_USERS = []
 else:
     DEFAULT_USERS = [
         ("admin", "admin123", "นายจ้าง", "employer"),
@@ -160,7 +164,7 @@ def init_db():
                 )
             staff_row = con.execute("SELECT id FROM users WHERE username='staff1'").fetchone()
             staff = staff_row[0] if staff_row else None
-            samples = [] if ADMIN_PASSWORD else [
+            samples = [] if (ADMIN_PASSWORD or NO_DEMO_DATA) else [
                 ("ทำความสะอาดห้องน้ำ", "โซน A ชั้น 1", "ขัดพื้น เช็ดกระจก เติมสบู่และกระดาษ", staff),
                 ("ถูพื้นล็อบบี้", "โซน B ล็อบบี้", "ถูพื้นให้แห้ง วางป้ายพื้นเปียก", staff),
                 ("เก็บขยะรอบอาคาร", "โซน C ลานจอดรถ", "", None),
@@ -306,6 +310,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.api_login()
         if method == "POST" and path == "/api/logout":
             return self.api_logout()
+        if path == "/api/setup":
+            if method == "GET":
+                return self.send_json(200, {"needed": self.setup_needed()})
+            if method == "POST":
+                return self.api_setup()
 
         u = self.current_user()
         if not u:
@@ -350,6 +359,30 @@ class Handler(BaseHTTPRequestHandler):
             return self.api_delete_user(self.need(u, "employer"), int(m.group(1)))
 
         raise ApiError(404, "ไม่พบ API")
+
+    # --- ตั้งค่าครั้งแรก (ยังไม่มีผู้ใช้เลย) ---
+    @staticmethod
+    def setup_needed():
+        with db() as con:
+            return con.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
+
+    def api_setup(self):
+        d = self.body()
+        name = str(d.get("name", "")).strip()[:100] or "นายจ้าง"
+        username = str(d.get("username", "")).strip()[:50]
+        password = str(d.get("password", ""))
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", username):
+            raise ApiError(400, "ชื่อผู้ใช้ใช้ได้เฉพาะ a-z, 0-9, _ . -")
+        if len(password) < 6:
+            raise ApiError(400, "รหัสผ่านต้องยาวอย่างน้อย 6 ตัวอักษร")
+        with db() as con:
+            # BEGIN IMMEDIATE กันสองคนกดพร้อมกัน
+            con.execute("BEGIN IMMEDIATE")
+            if con.execute("SELECT COUNT(*) FROM users").fetchone()[0] != 0:
+                raise ApiError(403, "ตั้งค่าไปแล้ว กรุณาเข้าสู่ระบบ")
+            con.execute("INSERT INTO users (username, password, name, role, created_at) VALUES (?,?,?,?,?)",
+                        (username, hash_password(password), name, "employer", now()))
+        self.send_json(201, {"ok": True})
 
     # --- เข้าสู่ระบบ ---
     def api_login(self):
