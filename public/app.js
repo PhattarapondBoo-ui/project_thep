@@ -1,4 +1,6 @@
-/* ระบบเช็คลิสต์งานพนักงาน — ฝั่งหน้าเว็บ (ไม่มี framework แก้ได้ตรง ๆ) */
+/* ระบบเช็คลิสต์งานพนักงาน — ฝั่งหน้าเว็บ (ไม่มี framework แก้ได้ตรง ๆ)
+   ข้อมูลเก็บใน Firebase ผ่าน backend.js */
+import * as backend from './backend.js';
 
 // ===== ข้อความที่แสดง (แก้คำได้ที่นี่) =====
 const STATUS = {
@@ -30,28 +32,25 @@ const fmtDate = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('th-TH',
 const todayStr = () => new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD
 
 async function api(method, url, data) {
-  let res;
   try {
-    res = await fetch(url, {
-      method,
-      headers: data ? { 'Content-Type': 'application/json' } : {},
-      body: data ? JSON.stringify(data) : undefined,
-      credentials: 'same-origin',
-    });
-  } catch {
-    throw new Error('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — ตรวจว่าเปิด start.bat ค้างไว้อยู่ และอินเทอร์เน็ต/WiFi ใช้ได้');
+    return await backend.request(method, url, data);
+  } catch (e) {
+    if (e.status === 401 && state.user) { state.user = null; render(); }
+    throw e;
   }
-  let body = null;
-  try { body = await res.json(); } catch { /* ไม่มี body */ }
-  // ได้คำตอบที่ไม่ใช่ JSON จาก /api = ไม่มี server.py ทำงานอยู่ (เช่น เอาไปวางบน Vercel/โฮสต์ไฟล์อย่างเดียว)
-  if (!body && (res.status === 404 || res.status === 405 || res.status >= 500)) {
-    throw new Error('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้: เว็บนี้ต้องรันผ่าน server.py (เช่น start.bat หรือ Railway) — Vercel ใช้ไม่ได้');
-  }
-  if (!res.ok) {
-    if (res.status === 401 && state.user) { state.user = null; render(); }
-    throw new Error((body && body.error) || 'เกิดข้อผิดพลาด');
-  }
-  return body;
+}
+
+// รูปผลงานโหลดทีหลัง (ไม่ให้รายการงานโหลดช้า) และจำไว้ไม่ต้องโหลดซ้ำ
+const photoCache = new Map();
+function hydratePhotos() {
+  document.querySelectorAll('img[data-photo-task]').forEach(async (img) => {
+    const key = `${img.dataset.photoTask}:${img.dataset.photoV}`;
+    try {
+      if (!photoCache.has(key)) photoCache.set(key, await backend.photo(img.dataset.photoTask));
+      const src = photoCache.get(key);
+      if (src) img.src = src;
+    } catch { /* โหลดรูปไม่ได้ — แสดงกรอบว่าง */ }
+  });
 }
 
 let toastTimer;
@@ -63,18 +62,26 @@ function toast(msg, isError = false) {
   toastTimer = setTimeout(() => (el.className = ''), 2600);
 }
 
-function compressImage(file, maxSize = 1280, quality = 0.8) {
+// ย่อรูปให้เล็กพอเก็บใน Firestore (ไม่เกิน ~700KB) — ถ้ายังใหญ่จะย่อลงอีกเรื่อย ๆ
+function compressImage(file, maxSize = 1280, quality = 0.75) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
-      const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
-      const c = document.createElement('canvas');
-      c.width = Math.round(img.width * scale);
-      c.height = Math.round(img.height * scale);
-      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      let size = maxSize, q = quality, out = '';
+      for (let i = 0; i < 6; i++) {
+        const scale = Math.min(1, size / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * scale);
+        c.height = Math.round(img.height * scale);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        out = c.toDataURL('image/jpeg', q);
+        if (out.length < 700_000) break;
+        size = Math.round(size * 0.8);
+        q = Math.max(0.5, q - 0.05);
+      }
       URL.revokeObjectURL(url);
-      resolve(c.toDataURL('image/jpeg', quality));
+      resolve(out);
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('ไม่สามารถอ่านไฟล์รูปนี้ได้')); };
     img.src = url;
@@ -92,9 +99,24 @@ async function loadData() {
 // ===== วาดหน้า =====
 function render() {
   const app = $('#app');
-  if (!state.user) app.innerHTML = viewLogin();
+  if (!backend.configured) app.innerHTML = viewNotConfigured();
+  else if (!state.user) app.innerHTML = viewLogin();
   else if (state.user.role === 'employer') app.innerHTML = viewEmployer();
   else app.innerHTML = viewEmployee();
+  hydratePhotos();
+}
+
+function viewNotConfigured() {
+  return `
+  <main class="login-wrap">
+    <div class="login-card">
+      <div class="brand">
+        <div class="logo">!</div>
+        <h1>ยังไม่ได้เชื่อม Firebase</h1>
+        <p>ใส่ค่าเชื่อมต่อในไฟล์ <b>public/firebase-config.js</b> แล้วโหลดหน้านี้ใหม่</p>
+      </div>
+    </div>
+  </main>`;
 }
 
 function viewLogin() {
@@ -189,7 +211,7 @@ function filteredTasks() {
   const f = state.filter;
   const list = !f || f === 'all' ? state.tasks : state.tasks.filter((t) => t.status === f);
   const order = state.user.role === 'employer' ? { submitted: 0, todo: 1, done: 2 } : { todo: 0, submitted: 1, done: 2 };
-  return [...list].sort((a, b) => order[a.status] - order[b.status] || b.id - a.id);
+  return [...list].sort((a, b) => order[a.status] - order[b.status] || b.created_at - a.created_at);
 }
 
 function taskMeta(t) {
@@ -204,7 +226,8 @@ function taskMeta(t) {
 function taskProof(t) {
   if (!t.photo || t.status === 'todo') return '';
   return `<div class="proof">
-    <img src="/uploads/${esc(t.photo)}" alt="รูปผลงาน" data-zoom loading="lazy">
+    <img alt="รูปผลงาน" data-zoom data-photo-task="${esc(t.id)}" data-photo-v="${esc(t.photo)}"
+      src="${esc(photoCache.get(`${t.id}:${t.photo}`) || '')}">
     <div class="proof-info">
       <div>ส่งโดย <strong>${esc(t.submitter_name || '-')}</strong></div>
       <div>${fmtTime(t.submitted_at)}</div>
@@ -395,7 +418,7 @@ function employerUsers() {
         <select name="role"><option value="employee">พนักงาน</option><option value="employer">นายจ้าง</option></select>
       </label>
       <label class="field">ชื่อผู้ใช้ (ใช้ล็อกอิน) *<input name="username" required maxlength="50" autocapitalize="none" placeholder="เช่น somchai"></label>
-      <label class="field">รหัสผ่าน *<input name="password" required minlength="4" placeholder="อย่างน้อย 4 ตัว"></label>
+      <label class="field">รหัสผ่าน *<input name="password" required minlength="6" placeholder="อย่างน้อย 6 ตัว"></label>
     </div>
     <div class="form-actions" style="margin-top:12px"><button class="btn primary" type="submit">เพิ่มบัญชี</button></div>
   </form>
@@ -434,7 +457,7 @@ const actions = {
   async 'change-password'() {
     const old_password = prompt('รหัสผ่านเดิม');
     if (old_password === null) return;
-    const new_password = prompt('รหัสผ่านใหม่ (อย่างน้อย 4 ตัว)');
+    const new_password = prompt('รหัสผ่านใหม่ (อย่างน้อย 6 ตัว)');
     if (new_password === null) return;
     await api('POST', '/api/me/password', { old_password, new_password });
     toast('เปลี่ยนรหัสผ่านแล้ว');
@@ -548,7 +571,7 @@ document.addEventListener('click', async (e) => {
 
   const btn = e.target.closest('[data-action]');
   if (btn && actions[btn.dataset.action]) {
-    try { await actions[btn.dataset.action](Number(btn.dataset.id), btn); }
+    try { await actions[btn.dataset.action](btn.dataset.id, btn); }
     catch (err) { toast(err.message, true); }
   }
 });
@@ -571,7 +594,7 @@ document.addEventListener('keydown',(e) => { if (e.key === 'Escape') $('#lightbo
 document.addEventListener('change', async (e) => {
   const input = e.target.closest('[data-photo-for]');
   if (!input || !input.files[0]) return;
-  const id = Number(input.dataset.photoFor);
+  const id = input.dataset.photoFor;
   const comment = ($(`[data-comment-for="${id}"]`) || {}).value || '';
   try {
     state.pendingPhotos[id] = await compressImage(input.files[0]);
@@ -639,6 +662,7 @@ document.addEventListener('submit', async (e) => {
 
 // ===== เริ่มต้น =====
 (async function init() {
+  if (!backend.configured) { render(); return; }
   try {
     state.user = await api('GET', '/api/me');
     await loadData();

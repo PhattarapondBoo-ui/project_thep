@@ -1,0 +1,61 @@
+rules_version = '2';
+
+// กฎความปลอดภัยของ Firestore — คัดลอกทั้งไฟล์ไปวางที่
+// Firebase Console → Firestore Database → Rules → Publish
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function userDoc() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    function isMember() { return signedIn() && exists(userDoc()); }
+    function myRole() { return get(userDoc()).data.role; }
+    function isEmployer() { return isMember() && myRole() == 'employer'; }
+    function isEmployee() { return isMember() && myRole() == 'employee'; }
+    function setupDone() { return exists(/databases/$(database)/documents/meta/setup); }
+    // พนักงานทำงานนี้ได้ไหม (งานของตัวเองหรือของ "ทุกคน" และยังไม่ถูกตรวจผ่าน)
+    function canWork(t) {
+      return isEmployee() && (t.assigned_to == null || t.assigned_to == request.auth.uid) && t.status != 'done';
+    }
+
+    // ตั้งค่าครั้งแรก: สร้างได้ครั้งเดียว พร้อมบัญชีนายจ้างคนแรก
+    match /meta/setup {
+      allow get: if true;
+      allow create: if signedIn() && !setupDone()
+        && getAfter(userDoc()).data.role == 'employer';
+    }
+
+    match /users/{uid} {
+      allow read: if isMember();
+      allow create: if isEmployer()
+        || (signedIn() && request.auth.uid == uid && !setupDone()
+            && request.resource.data.role == 'employer');
+      allow update: if isEmployer();
+      allow delete: if isEmployer() && uid != request.auth.uid;
+    }
+
+    match /tasks/{taskId} {
+      allow read: if isEmployer()
+        || (isEmployee() && (resource.data.assigned_to == null || resource.data.assigned_to == request.auth.uid));
+      allow create, delete: if isEmployer();
+      allow update: if isEmployer()
+        || (canWork(resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'comment', 'reject_note', 'submitted_by', 'submitted_at', 'photo_at'])
+            && request.resource.data.status == 'submitted'
+            && request.resource.data.submitted_by == request.auth.uid);
+    }
+
+    match /photos/{taskId} {
+      allow read: if isMember();
+      allow delete: if isEmployer();
+      allow create, update: if (isEmployer()
+          || canWork(get(/databases/$(database)/documents/tasks/$(taskId)).data))
+        && request.resource.data.data is string
+        && request.resource.data.data.size() < 1000000;
+    }
+
+    match /templates/{id} {
+      allow read, write: if isEmployer();
+    }
+  }
+}
